@@ -1,4 +1,4 @@
-"""Simple app: photo and video capture from the MacBook's front camera."""
+"""Camera app logic: photo/video capture from the MacBook's front camera."""
 
 import datetime
 import time
@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 from PIL import Image, ImageDraw, ImageTk
 
-SAVE_DIR = Path(__file__).resolve().parent
+SAVE_DIR = Path(__file__).resolve().parent.parent
 FPS = 30
 PREVIEW_WIDTH = 720  # cap preview width so the window always fits on screen
 
@@ -138,9 +138,3 @@ class CameraApp:
             self.writer.release()
         self.cap.release()
         self.root.destroy()
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    CameraApp(root)
-    root.mainloop()

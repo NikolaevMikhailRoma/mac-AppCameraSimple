@@ -2,3 +2,4 @@
 *.jpg
 *.mp4
 __pycache__/
+MANIFEST.md
