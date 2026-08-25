@@ -2,3 +2,5 @@
 *.jpg
 *.mp4
 __pycache__/
+Experiments/
+.build/
