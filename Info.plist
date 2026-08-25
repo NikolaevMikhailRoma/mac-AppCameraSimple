@@ -18,5 +18,7 @@
     <string>15.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Camera preview needs access to the camera.</string>
 </dict>
 </plist>
