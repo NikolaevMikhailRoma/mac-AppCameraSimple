@@ -6,3 +6,5 @@ Experiments/
 .build/
 *.app/
 .DS_Store
+MANIFEST.md
+.claude/
