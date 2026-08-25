@@ -4,3 +4,5 @@
 __pycache__/
 Experiments/
 .build/
+*.app/
+.DS_Store
