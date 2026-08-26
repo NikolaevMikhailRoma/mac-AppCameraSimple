@@ -2,3 +2,10 @@
 *.jpg
 *.mp4
 __pycache__/
+Experiments/
+.build/
+*.app/
+.DS_Store
+MANIFEST.md
+.claude/
+docs/
