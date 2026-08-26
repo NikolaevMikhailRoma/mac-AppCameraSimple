@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SimpleApp",
+    name: "AppCameraSimple",
     platforms: [.macOS(.v15)],
-    targets: [.executableTarget(name: "SimpleApp")]
+    targets: [.executableTarget(name: "AppCameraSimple")]
 )
