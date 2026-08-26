@@ -3,13 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>SimpleApp</string>
+    <string>AppCameraSimple</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.simpleapp</string>
+    <string>com.example.appcamerasimple</string>
     <key>CFBundleName</key>
-    <string>SimpleApp</string>
+    <string>AppCameraSimple</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
