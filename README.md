@@ -3,7 +3,8 @@
 ![Screenshot](assets/screenshot.png)
 
 A minimal native macOS camera app: live preview, photo and video capture.
-Files are saved to `~/Pictures/AppCameraSimple/`.
+Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default; pick a
+separate folder for each, and the video format, in the Settings window (⌘,).
 
 ## Run the app (users)
 
@@ -27,16 +28,8 @@ cd mac-AppCameraSimple
 open AppCameraSimple.app
 ```
 
-## Roadmap
-
-- Let user pick save folder
-- Settings window
-- Recording elapsed-time display
-- Split recording into clips???
-- Cross-platform video format???
-- Separate photo/video folders???
-- Remove the gray background at the bottom
-- Polish, refactor, more tests
+Run the unit tests with `swift test` (pure logic lives in the
+`AppCameraSimpleCore` target).
 
 ## License
 
