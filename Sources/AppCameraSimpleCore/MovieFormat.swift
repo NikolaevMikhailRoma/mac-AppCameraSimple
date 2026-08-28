@@ -16,8 +16,21 @@ public enum MovieFormat: String, CaseIterable, Sendable {
     /// File extension for the container, e.g. `mp4`.
     public var fileExtension: String { rawValue }
 
+    /// Human-readable name for menus and pop-ups, e.g. `MP4`.
+    public var displayName: String { rawValue.uppercased() }
+
     /// The stored choice, or `.mp4` when nothing valid is stored.
     public static func stored(in defaults: UserDefaults = .standard) -> MovieFormat {
         defaults.string(forKey: storageKey).flatMap(MovieFormat.init(rawValue:)) ?? fallback
+    }
+
+    /// The format matching a `displayName`, or `nil` for anything unrecognized.
+    public static func named(_ displayName: String?) -> MovieFormat? {
+        displayName.flatMap { MovieFormat(rawValue: $0.lowercased()) }
+    }
+
+    /// Persists this choice so the next `stored(in:)` reads it back.
+    public func store(in defaults: UserDefaults = .standard) {
+        defaults.set(rawValue, forKey: MovieFormat.storageKey)
     }
 }

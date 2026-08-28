@@ -2,6 +2,16 @@ import Foundation
 @preconcurrency import AVFoundation
 import AppCameraSimpleCore
 
+extension MovieFormat {
+    /// Container type handed to the exporter.
+    var avFileType: AVFileType {
+        switch self {
+        case .mov: return .mov
+        case .mp4: return .mp4
+        }
+    }
+}
+
 /// Wraps `AVCaptureMovieFileOutput` to support pause/resume while producing a
 /// single output file. Each running span is recorded natively as a temp `.mov`
 /// segment; on `stop()` a lone segment is moved (same container) or remuxed
@@ -11,18 +21,7 @@ import AppCameraSimpleCore
 final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     enum State { case idle, recording, paused }
 
-    /// `AVFileType` for a stored `MovieFormat` choice.
-    private static func fileType(for format: MovieFormat) -> AVFileType {
-        switch format {
-        case .mov: return .mov
-        case .mp4: return .mp4
-        }
-    }
-
     enum RecorderError: Error { case noData, exportUnavailable }
-
-    /// What to do once the segment currently being written finishes.
-    private enum Pending { case none, resume, finalize }
 
     /// Temp segments are always written in the native container.
     private static let segmentExtension = "mov"
@@ -33,15 +32,25 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
 
     private var segments: [URL] = []
     private var segmentError: Error?
-    private var pendingSegmentFinish = false
-    private var pending: Pending = .none
+
+    /// Runs once the segment currently being written lands on disk. Pause and
+    /// stop both have to wait for that callback before doing their real work.
+    private var onSegmentFinished: (() -> Void)?
 
     private var destinationFolder: URL?
     private var finalName = ""
     private var completion: ((Result<URL, Error>) -> Void)?
 
-    /// Called when a stitch/export step begins (only when pauses occurred).
+    /// Called when a stitch/export step begins (only when a re-container or a
+    /// merge is actually needed).
     var onProcessing: (() -> Void)?
+
+    var isActive: Bool { state != .idle }
+
+    /// True between `startRecording` and the delegate callback for that segment.
+    /// Tracked by hand: `movieOutput.isRecording` flips to `false` as soon as
+    /// `stopRecording()` is called, long before the file is actually on disk.
+    private var isWritingSegment = false
 
     /// Adds the movie output to the session and forces H.264 so both `.mov` and
     /// `.mp4` files stay broadly portable. Call inside its configuration block.
@@ -53,7 +62,7 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
         }
     }
 
-    var isActive: Bool { state != .idle }
+    // MARK: - Transport
 
     /// Begins recording. The final file name is decided now so the UI can show
     /// it immediately; the return value is that name (e.g. `20260828_143000.mov`).
@@ -61,7 +70,8 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     func start(folder: URL) -> String {
         segments.removeAll()
         segmentError = nil
-        pending = .none
+        onSegmentFinished = nil
+        isWritingSegment = false
         destinationFolder = folder
         format = MovieFormat.stored()
         finalName = Filenames.captureName(ext: format.fileExtension)
@@ -73,18 +83,18 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     func pause() {
         guard state == .recording else { return }
         state = .paused
-        pending = .none
+        onSegmentFinished = nil
         movieOutput.stopRecording()
     }
 
     func resume() {
         guard state == .paused else { return }
         state = .recording
-        if pendingSegmentFinish {
-            pending = .resume
-        } else {
-            startSegment()
-        }
+        // If the paused segment is still being written, pick up in its callback.
+        after(segmentLands: { [weak self] in
+            guard let self, self.state == .recording else { return }
+            self.startSegment()
+        })
     }
 
     /// Finishes recording. `completion` is invoked (on the main actor) with the
@@ -92,26 +102,28 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     func stop(completion: @escaping (Result<URL, Error>) -> Void) {
         guard state != .idle else { return }
         self.completion = completion
-        switch state {
-        case .recording:
-            pending = .finalize
-            movieOutput.stopRecording()
-        case .paused:
-            if pendingSegmentFinish {
-                pending = .finalize
-            } else {
-                assembleOutput()
-            }
-        case .idle:
-            break
-        }
+        let wasRecording = state == .recording
         state = .idle
+        if wasRecording { movieOutput.stopRecording() }
+        after(segmentLands: { [weak self] in self?.assembleOutput() })
     }
+
+    /// Runs `work` as soon as no segment is in flight — right away when nothing
+    /// is being written, otherwise from the recording delegate's callback.
+    private func after(segmentLands work: @escaping () -> Void) {
+        if isWritingSegment {
+            onSegmentFinished = work
+        } else {
+            work()
+        }
+    }
+
+    // MARK: - Segments
 
     private func startSegment() {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("segment-\(segments.count)-\(UUID().uuidString).\(Recorder.segmentExtension)")
-        pendingSegmentFinish = true
+        isWritingSegment = true
         movieOutput.startRecording(to: url, recordingDelegate: self)
     }
 
@@ -128,77 +140,58 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
     }
 
     private func segmentFinished(_ url: URL, succeeded: Bool, error: Error?) {
-        pendingSegmentFinish = false
+        isWritingSegment = false
         if succeeded {
             segments.append(url)
         } else {
             segmentError = error
         }
-        switch pending {
-        case .none:
-            break
-        case .resume:
-            pending = .none
-            if state == .recording { startSegment() }
-        case .finalize:
-            pending = .none
-            assembleOutput()
-        }
+        let work = onSegmentFinished
+        onSegmentFinished = nil
+        work?()
     }
 
-    private func assembleOutput() {
-        guard let folder = destinationFolder else { return }
-        let dest = folder.appendingPathComponent(finalName)
+    // MARK: - Assembly
 
-        if segments.isEmpty {
+    private func assembleOutput() {
+        guard let folder = destinationFolder, !segments.isEmpty else {
             finish(.failure(segmentError ?? RecorderError.noData))
             return
         }
-        let fileType = Recorder.fileType(for: format)
+        let dest = folder.appendingPathComponent(finalName)
 
-        if segments.count == 1 {
-            let only = segments[0]
-            segments.removeAll()
-
-            // Fast path: same container as the temp segment — just move it.
-            if format.fileExtension == Recorder.segmentExtension {
-                do {
-                    try? FileManager.default.removeItem(at: dest)
-                    try FileManager.default.moveItem(at: only, to: dest)
-                    finish(.success(dest))
-                } catch {
-                    try? FileManager.default.removeItem(at: only)
-                    finish(.failure(error))
-                }
-                return
-            }
-
-            // Different container — remux (passthrough, no re-encode).
-            onProcessing?()
-            Task { @MainActor [weak self] in
-                do {
-                    try await Recorder.stitch(segments: [only], to: dest, fileType: fileType)
-                    self?.finish(.success(dest))
-                } catch {
-                    self?.finish(.failure(error))
-                }
-                try? FileManager.default.removeItem(at: only)
+        // Fast path: a single segment already in the target container is just
+        // moved into place — no export, no re-encode.
+        if segments.count == 1, format.fileExtension == Recorder.segmentExtension {
+            let only = segments.removeFirst()
+            do {
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.moveItem(at: only, to: dest)
+                finish(.success(dest))
+            } catch {
+                segments = [only]
+                finish(.failure(error))
             }
             return
         }
 
+        // Otherwise export: one segment gets remuxed, several get concatenated.
         onProcessing?()
-        let segs = segments
+        let sources = segments
+        let fileType = format.avFileType
         Task { @MainActor [weak self] in
+            let result: Result<URL, Error>
             do {
-                try await Recorder.stitch(segments: segs, to: dest, fileType: fileType)
-                self?.finish(.success(dest))
+                try await Recorder.stitch(segments: sources, to: dest, fileType: fileType)
+                result = .success(dest)
             } catch {
-                self?.finish(.failure(error))
+                result = .failure(error)
             }
+            self?.finish(result)
         }
     }
 
+    /// Delivers the result and drops every temp segment left behind.
     private func finish(_ result: Result<URL, Error>) {
         for segment in segments {
             try? FileManager.default.removeItem(at: segment)

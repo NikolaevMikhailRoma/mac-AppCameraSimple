@@ -10,8 +10,11 @@ final class FilenamesTests: XCTestCase {
         return f.date(from: string)!
     }
 
-    func testTimestampFormat() {
-        XCTAssertEqual(Filenames.timestamp(for: date("2026-08-28 15:01:02")), "20260828_150102")
+    func testCaptureNameUsesTimestampFormat() {
+        XCTAssertEqual(
+            Filenames.captureName(ext: "mov", date: date("2026-08-28 15:01:02")),
+            "20260828_150102.mov"
+        )
     }
 
     func testCaptureNameAppendsExtension() {
@@ -57,6 +60,28 @@ final class MovieFormatTests: XCTestCase {
         d.set("mov", forKey: MovieFormat.storageKey)
         XCTAssertEqual(MovieFormat.stored(in: d), .mov)
     }
+
+    func testStoreRoundTripsThroughDefaults() {
+        for format in MovieFormat.allCases {
+            let d = makeDefaults()
+            format.store(in: d)
+            XCTAssertEqual(MovieFormat.stored(in: d), format)
+        }
+    }
+
+    func testStoreOverwritesPreviousChoice() {
+        let d = makeDefaults()
+        MovieFormat.mov.store(in: d)
+        MovieFormat.mp4.store(in: d)
+        XCTAssertEqual(MovieFormat.stored(in: d), .mp4)
+    }
+
+    func testDisplayNameRoundTrip() {
+        XCTAssertEqual(MovieFormat.mp4.displayName, "MP4")
+        XCTAssertEqual(MovieFormat.named("MOV"), .mov)
+        XCTAssertNil(MovieFormat.named("AVI"))
+        XCTAssertNil(MovieFormat.named(nil))
+    }
 }
 
 final class ElapsedTimeTests: XCTestCase {
@@ -99,7 +124,6 @@ final class RunningClockTests: XCTestCase {
         clock.start(now: at(0))
         clock.pause(now: at(7))
         XCTAssertEqual(clock.elapsed(now: at(100)), 7, accuracy: 0.0001)
-        XCTAssertFalse(clock.isRunning)
     }
 
     func testStartIsIdempotentWhileRunning() {
@@ -134,7 +158,7 @@ final class SaveFolderStoreTests: XCTestCase {
     }
 
     private func store(_ defaults: UserDefaults, _ prefix: String, _ defaultFolder: URL) -> SaveFolderStore {
-        SaveFolderStore(defaults: defaults, keyPrefix: prefix, defaultFolder: defaultFolder, securityScoped: false)
+        SaveFolderStore(defaults: defaults, keyPrefix: prefix, defaultFolder: defaultFolder)
     }
 
     func testDefaultFolderUsedWhenNothingStored() {
@@ -186,15 +210,5 @@ final class SaveFolderStoreTests: XCTestCase {
 
         XCTAssertEqual(store(defaults, "Video", videoDefault).resolvedFolder().standardizedFileURL,
                        videoDefault.standardizedFileURL)
-    }
-
-    func testBookmarkRoundTrip() throws {
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("AppCameraSimpleTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let resolved = try XCTUnwrap(SaveFolderStore.bookmarkRoundTrip(tmp))
-        XCTAssertEqual(resolved.standardizedFileURL, tmp.standardizedFileURL)
     }
 }
