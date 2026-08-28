@@ -5,14 +5,11 @@ import AppCameraSimpleCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureDelegate {
     private var window: NSWindow!
+    private var bar: ControlBar!
+
     private let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
     private let recorder = Recorder()
-
-    private var photoButton: NSButton!
-    private var recordButton: NSButton!
-    private var pauseButton: NSButton!
-    private var infoLabel: NSTextField!
 
     /// The active recording's file name, or the last saved file's name.
     private var lastName = ""
@@ -30,100 +27,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     private var recordingTimer: Timer?
     private var clock = RunningClock()
 
-    /// Full URL for a new capture in the user's chosen save folder.
-    private func captureURL(ext: String) -> URL {
-        photoFolder.resolvedFolder().appendingPathComponent(Filenames.captureName(ext: ext))
-    }
-
-    private func symbolImage(_ name: String, pointSize: CGFloat = 22) -> NSImage {
-        let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-        return NSImage(systemSymbolName: name, accessibilityDescription: name)!.withSymbolConfiguration(config)!
-    }
+    // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMainMenu(target: self)
         configureSession()
+        recorder.onProcessing = { [weak self] in self?.bar.showInfo("Processing…") }
 
-        recorder.onProcessing = { [weak self] in
-            self?.infoLabel.stringValue = "Processing…"
-        }
+        bar = ControlBar()
+        bar.onPhoto = { [weak self] in self?.takePhoto() }
+        bar.onRecord = { [weak self] in self?.toggleRecording() }
+        bar.onPause = { [weak self] in self?.togglePause() }
+        bar.onSettings = { [weak self] in self?.showSettings() }
 
-        let previewView = CameraPreviewView(session: session)
-
-        photoButton = NSButton(image: symbolImage("camera.fill"), target: self, action: #selector(takePhoto))
-        photoButton.bezelStyle = .regularSquare
-        photoButton.isBordered = false
-        photoButton.imagePosition = .imageOnly
-
-        recordButton = NSButton(image: symbolImage("record.circle"), target: self, action: #selector(toggleRecording))
-        recordButton.bezelStyle = .regularSquare
-        recordButton.isBordered = false
-        recordButton.imagePosition = .imageOnly
-        setRecordIcon(recording: false)
-
-        pauseButton = NSButton(image: symbolImage("pause.circle"), target: self, action: #selector(togglePause))
-        pauseButton.bezelStyle = .regularSquare
-        pauseButton.isBordered = false
-        pauseButton.imagePosition = .imageOnly
-        pauseButton.isHidden = true
-
-        photoButton.contentTintColor = .white
-        recordButton.contentTintColor = .white
-        pauseButton.contentTintColor = .white
-
-        infoLabel = NSTextField(labelWithString: "")
-        infoLabel.alignment = .center
-        infoLabel.textColor = .white
-        infoLabel.font = .systemFont(ofSize: 11)
-        infoLabel.alphaValue = 0.9
-
-        let stack = NSStackView(views: [photoButton, recordButton, pauseButton])
-        stack.orientation = .horizontal
-        stack.spacing = 24
-        stack.alignment = .centerY
-
-        // The bar sits directly on top of the video. A faint bottom-up scrim
-        // keeps the white icons legible over bright footage without adding a
-        // solid strip of chrome.
-        let settingsButton = NSButton(
-            image: symbolImage("gearshape", pointSize: 16),
-            target: self,
-            action: #selector(showSettings)
-        )
-        settingsButton.bezelStyle = .regularSquare
-        settingsButton.isBordered = false
-        settingsButton.imagePosition = .imageOnly
-        settingsButton.contentTintColor = .white
-
-        let buttonBar = ScrimView()
-        buttonBar.addSubview(stack)
-        buttonBar.addSubview(infoLabel)
-        buttonBar.addSubview(settingsButton)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        infoLabel.translatesAutoresizingMaskIntoConstraints = false
-        settingsButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: buttonBar.centerXAnchor),
-            stack.topAnchor.constraint(equalTo: buttonBar.topAnchor, constant: 10),
-            settingsButton.trailingAnchor.constraint(equalTo: buttonBar.trailingAnchor, constant: -12),
-            settingsButton.centerYAnchor.constraint(equalTo: stack.centerYAnchor),
-            infoLabel.centerXAnchor.constraint(equalTo: buttonBar.centerXAnchor),
-            infoLabel.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor, constant: -8),
-        ])
-
-        // 16:9 to match the camera's native aspect ratio; the button bar floats
-        // over the preview, so the window is exactly the video size.
-        let previewWidth: CGFloat = 960
-        let previewHeight = previewWidth * 9 / 16
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: previewWidth, height: previewHeight),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = appName
-        window.contentView = makeRootView(previewView: previewView, buttonBar: buttonBar)
-        window.center()
+        window = makeWindow(previewView: CameraPreviewView(session: session))
         window.makeKeyAndOrderFront(nil)
 
         DispatchQueue.global(qos: .userInitiated).async { [session] in
@@ -132,14 +49,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        if recorder.isActive {
-            recorder.stop { _ in }
-        }
-        session.stopRunning()
-        photoFolder.stopAccessing()
-        videoFolder.stopAccessing()
-        return true
+        true
     }
+
+    /// Quitting mid-recording has to wait: the file is only complete once the
+    /// last segment is written and the segments are merged.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard recorder.isActive else { return .terminateNow }
+        stopRecordingTimer()
+        bar.showInfo("Finishing recording…")
+        recorder.stop { _ in
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        session.stopRunning()
+    }
+
+    // MARK: - Setup
 
     private func configureSession() {
         session.beginConfiguration()
@@ -157,42 +86,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         session.commitConfiguration()
     }
 
+    /// 16:9 to match the camera's native aspect ratio; the control bar floats
+    /// over the preview, so the window is exactly the video size.
+    private func makeWindow(previewView: NSView) -> NSWindow {
+        let width: CGFloat = 960
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: width * 9 / 16),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = appName
+        window.contentView = makeRootView(previewView: previewView, controlBar: bar)
+        window.center()
+        return window
+    }
+
     @objc func showSettings() {
-        if settingsWindowController == nil {
-            settingsWindowController = SettingsWindowController(
-                photoFolder: photoFolder,
-                videoFolder: videoFolder
-            )
-        }
-        settingsWindowController?.showWindow(nil)
-        settingsWindowController?.window?.makeKeyAndOrderFront(nil)
+        let controller = settingsWindowController ?? SettingsWindowController(
+            photoFolder: photoFolder,
+            videoFolder: videoFolder
+        )
+        settingsWindowController = controller
+        controller.refresh()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    @objc private func takePhoto() {
+    // MARK: - Photo
+
+    private func takePhoto() {
         photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
     }
 
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         let data = (error == nil) ? photo.fileDataRepresentation() : nil
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            guard let data else { self.infoLabel.stringValue = "Photo failed"; return }
-            let url = self.captureURL(ext: "jpg")
-            do {
-                try data.write(to: url)
-                self.lastName = url.lastPathComponent
-                self.refreshInfo()
-            } catch {
-                self.infoLabel.stringValue = "Photo failed"
-            }
+            self?.savePhoto(data)
         }
     }
 
-    @objc private func toggleRecording() {
+    private func savePhoto(_ data: Data?) {
+        guard let data else { return bar.showInfo("Photo failed") }
+        let url = photoFolder.resolvedFolder()
+            .appendingPathComponent(Filenames.captureName(ext: "jpg"))
+        do {
+            try data.write(to: url)
+            lastName = url.lastPathComponent
+            refreshInfo()
+        } catch {
+            bar.showInfo("Photo failed")
+        }
+    }
+
+    // MARK: - Recording
+
+    private func toggleRecording() {
         if recorder.isActive {
             stopRecordingTimer()
-            setRecordIcon(recording: false)
+            bar.setRecording(false)
             recorder.stop { [weak self] result in
                 guard let self else { return }
                 switch result {
@@ -200,22 +153,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
                     self.lastName = url.lastPathComponent
                     self.refreshInfo()
                 case .failure:
-                    self.infoLabel.stringValue = "Recording failed"
+                    self.bar.showInfo("Recording failed")
                 }
                 self.syncPauseButton()
             }
         } else {
             lastName = recorder.start(folder: videoFolder.resolvedFolder())
-            refreshInfo()
             clock.reset()
             clock.start()
-            setRecordIcon(recording: true)
+            bar.setRecording(true)
             startRecordingTimer()
         }
         syncPauseButton()
     }
 
-    @objc private func togglePause() {
+    private func togglePause() {
         switch recorder.state {
         case .recording:
             recorder.pause()
@@ -232,11 +184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         syncPauseButton()
     }
 
-    /// Shows/hides the pause button and swaps its icon for the current state.
     private func syncPauseButton() {
-        pauseButton.isHidden = !recorder.isActive
-        let paused = recorder.state == .paused
-        pauseButton.image = symbolImage(paused ? "play.circle" : "pause.circle")
+        bar.setPause(visible: recorder.isActive, paused: recorder.state == .paused)
     }
 
     private func startRecordingTimer() {
@@ -255,25 +204,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     /// The single bottom line: file name while idle, plus elapsed time and a
     /// pause marker while a recording is in progress.
     private func refreshInfo() {
+        let elapsed = ElapsedTime.string(from: clock.elapsed())
         switch recorder.state {
         case .idle:
-            infoLabel.stringValue = lastName
+            bar.showInfo(lastName)
         case .recording:
-            infoLabel.stringValue = "\(lastName)  ·  \(ElapsedTime.string(from: clock.elapsed()))"
+            bar.showInfo("\(lastName)  ·  \(elapsed)")
         case .paused:
-            infoLabel.stringValue = "\(lastName)  ·  \(ElapsedTime.string(from: clock.elapsed()))  ·  paused"
+            bar.showInfo("\(lastName)  ·  \(elapsed)  ·  paused")
         }
-    }
-
-    private func setRecordIcon(recording: Bool) {
-        let name = recording ? "stop.circle.fill" : "record.circle"
-        let image = symbolImage(name)
-        if recording {
-            image.isTemplate = false
-            recordButton.contentTintColor = .systemRed
-        } else {
-            recordButton.contentTintColor = .white
-        }
-        recordButton.image = image
     }
 }

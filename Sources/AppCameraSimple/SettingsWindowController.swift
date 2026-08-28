@@ -39,7 +39,7 @@ final class SettingsWindowController: NSWindowController {
             label.stringValue = (path as NSString).abbreviatingWithTildeInPath
             label.toolTip = path
         }
-        formatPopUp.selectItem(withTitle: MovieFormat.stored().rawValue.uppercased())
+        formatPopUp.selectItem(withTitle: MovieFormat.stored().displayName)
     }
 
     private func makeContentView() -> NSView {
@@ -48,7 +48,7 @@ final class SettingsWindowController: NSWindowController {
             field.textColor = .secondaryLabelColor
             field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
-        formatPopUp.addItems(withTitles: MovieFormat.allCases.map { $0.rawValue.uppercased() })
+        formatPopUp.addItems(withTitles: MovieFormat.allCases.map(\.displayName))
         formatPopUp.target = self
         formatPopUp.action = #selector(changeFormat)
 
@@ -60,16 +60,10 @@ final class SettingsWindowController: NSWindowController {
         grid.rowSpacing = 8
         grid.columnSpacing = 8
         grid.column(at: 0).xPlacement = .trailing
-        grid.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
         container.addSubview(grid)
-        NSLayoutConstraint.activate([
-            grid.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
-            grid.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
-            grid.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-            grid.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -20),
-        ])
+        grid.pin(to: container, inset: 20)
         return container
     }
 
@@ -85,19 +79,22 @@ final class SettingsWindowController: NSWindowController {
         return button
     }
 
-    private func pickFolder(for store: SaveFolderStore) {
-        FolderPicker.present(startingAt: store.resolvedFolder()) { [weak self] url in
-            guard let self else { return }
+    private func pickFolder(for store: SaveFolderStore, message: String) {
+        FolderPicker.present(startingAt: store.resolvedFolder(), message: message) { [weak self] url in
             store.setFolder(url)
-            self.refresh()
+            self?.refresh()
         }
     }
 
-    @objc private func changePhotoFolder() { pickFolder(for: photoFolder) }
-    @objc private func changeVideoFolder() { pickFolder(for: videoFolder) }
+    @objc private func changePhotoFolder() {
+        pickFolder(for: photoFolder, message: "Choose a folder for saved photos")
+    }
+
+    @objc private func changeVideoFolder() {
+        pickFolder(for: videoFolder, message: "Choose a folder for recorded videos")
+    }
 
     @objc private func changeFormat() {
-        let raw = formatPopUp.titleOfSelectedItem?.lowercased() ?? MovieFormat.fallback.rawValue
-        UserDefaults.standard.set(raw, forKey: MovieFormat.storageKey)
+        (MovieFormat.named(formatPopUp.titleOfSelectedItem) ?? .fallback).store()
     }
 }

@@ -8,8 +8,6 @@ public struct RunningClock {
 
     public init() {}
 
-    public var isRunning: Bool { startedAt != nil }
-
     /// Begins (or continues) counting. A no-op while already running.
     public mutating func start(now: Date = Date()) {
         if startedAt == nil { startedAt = now }
