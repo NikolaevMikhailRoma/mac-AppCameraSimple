@@ -1,23 +1,31 @@
 import AppKit
 import AppCameraSimpleCore
 
-/// Standard macOS Settings window: independent photo/video save folders and the
-/// video container format, laid out in a captioned grid.
+/// Standard macOS Settings window: independent photo/video save folders, the
+/// video container format and the capture toggles, laid out in a captioned grid.
 @MainActor
 final class SettingsWindowController: NSWindowController {
+    /// Mirroring is the one setting that has to reach the live preview the moment
+    /// it changes, rather than being read when the next capture starts.
+    var onMirrorChanged: (() -> Void)?
+
     private let photoFolder: SaveFolderStore
     private let videoFolder: SaveFolderStore
 
     private let photoValue = NSTextField(labelWithString: "")
     private let videoValue = NSTextField(labelWithString: "")
     private let formatPopUp = NSPopUpButton()
+    private let mirrorCheckbox = NSButton(checkboxWithTitle: "Mirror image", target: nil, action: nil)
+
+    /// Long folder paths need the width; the height follows the grid.
+    private static let width: CGFloat = 460
 
     init(photoFolder: SaveFolderStore, videoFolder: SaveFolderStore) {
         self.photoFolder = photoFolder
         self.videoFolder = videoFolder
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 130),
+            contentRect: NSRect(x: 0, y: 0, width: SettingsWindowController.width, height: 130),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -25,7 +33,9 @@ final class SettingsWindowController: NSWindowController {
         window.title = "\(appName) Settings"
         super.init(window: window)
 
-        window.contentView = makeContentView()
+        let content = makeContentView()
+        window.contentView = content
+        window.setContentSize(NSSize(width: SettingsWindowController.width, height: content.fittingSize.height))
         window.center()
         refresh()
     }
@@ -40,6 +50,7 @@ final class SettingsWindowController: NSWindowController {
             label.toolTip = path
         }
         formatPopUp.selectItem(withTitle: MovieFormat.stored().displayName)
+        mirrorCheckbox.state = BoolSetting.mirrorVideo.stored() ? .on : .off
     }
 
     private func makeContentView() -> NSView {
@@ -52,10 +63,16 @@ final class SettingsWindowController: NSWindowController {
         formatPopUp.target = self
         formatPopUp.action = #selector(changeFormat)
 
+        mirrorCheckbox.target = self
+        mirrorCheckbox.action = #selector(changeMirror)
+
+        // The checkbox rows carry their label themselves, so their caption cell
+        // stays empty and they line up under the other value controls.
         let grid = NSGridView(views: [
             [caption("Photos"), photoValue, changeButton(#selector(changePhotoFolder))],
             [caption("Videos"), videoValue, changeButton(#selector(changeVideoFolder))],
             [caption("Format"), formatPopUp],
+            [NSGridCell.emptyContentView, mirrorCheckbox],
         ])
         grid.rowSpacing = 8
         grid.columnSpacing = 8
@@ -96,5 +113,10 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func changeFormat() {
         (MovieFormat.named(formatPopUp.titleOfSelectedItem) ?? .fallback).store()
+    }
+
+    @objc private func changeMirror() {
+        BoolSetting.mirrorVideo.store(mirrorCheckbox.state == .on)
+        onMirrorChanged?()
     }
 }

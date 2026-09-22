@@ -6,6 +6,7 @@ import AppCameraSimpleCore
 final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureDelegate {
     private var window: NSWindow!
     private var bar: ControlBar!
+    private var previewView: CameraPreviewView!
 
     private let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
@@ -40,8 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         bar.onPause = { [weak self] in self?.togglePause() }
         bar.onSettings = { [weak self] in self?.showSettings() }
 
-        window = makeWindow(previewView: CameraPreviewView(session: session))
+        previewView = CameraPreviewView(session: session)
+        window = makeWindow(previewView: previewView)
         window.makeKeyAndOrderFront(nil)
+        applyMirroring()
 
         DispatchQueue.global(qos: .userInitiated).async { [session] in
             session.startRunning()
@@ -86,6 +89,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         session.commitConfiguration()
     }
 
+    /// Applies the mirror setting to the two connections that show or capture a
+    /// still image right now. The movie output is left alone on purpose: the
+    /// recorder latches the setting when a take starts, so flipping the checkbox
+    /// mid-recording cannot produce a file whose halves disagree.
+    private func applyMirroring() {
+        let mirrored = BoolSetting.mirrorVideo.stored()
+        previewView.previewLayer.connection?.setMirrored(mirrored)
+        photoOutput.connection(with: .video)?.setMirrored(mirrored)
+    }
+
     /// 16:9 to match the camera's native aspect ratio; the control bar floats
     /// over the preview, so the window is exactly the video size.
     private func makeWindow(previewView: NSView) -> NSWindow {
@@ -107,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
             photoFolder: photoFolder,
             videoFolder: videoFolder
         )
+        controller.onMirrorChanged = { [weak self] in self?.applyMirroring() }
         settingsWindowController = controller
         controller.refresh()
         controller.showWindow(nil)
