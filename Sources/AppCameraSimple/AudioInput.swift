@@ -29,14 +29,25 @@ final class AudioInput {
             addInput()
             then()
         case .notDetermined:
-            AVCaptureDevice.requestAccess(for: .audio) { _ in
-                Task { @MainActor [weak self] in
-                    self?.addInput()
-                    then()
-                }
+            AudioInput.requestAccess { [weak self] in
+                self?.addInput()
+                then()
             }
         default:
             then()
+        }
+    }
+
+    /// Asks for microphone access, then resumes on the main actor.
+    ///
+    /// This has to be `nonisolated`. `requestAccess` answers on an XPC queue,
+    /// and its handler is not annotated for strict concurrency, so a closure
+    /// written inline inside this `@MainActor` class silently inherits the main
+    /// actor: it compiles, then traps on an "already on the main queue"
+    /// assertion the moment TCC replies. Taking the hop explicitly is the fix.
+    private nonisolated static func requestAccess(then: @escaping @MainActor () -> Void) {
+        AVCaptureDevice.requestAccess(for: .audio) { _ in
+            Task { @MainActor in then() }
         }
     }
 
