@@ -2,9 +2,13 @@
 
 ![Screenshot](assets/screenshot.png)
 
-A minimal native macOS camera app: live preview, photo and video capture.
+A minimal native macOS camera app: live preview, photo and video capture. The
+image is mirrored left to right, the way a viewfinder normally behaves, and what
+you see is what gets saved.
+
 Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default; pick a
-separate folder for each, and the video format, in the Settings window (⌘,).
+separate folder for each, the video format, and whether to mirror, in the
+Settings window (⌘,).
 
 ## Run the app (users)
 

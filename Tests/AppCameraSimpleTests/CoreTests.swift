@@ -84,6 +84,61 @@ final class MovieFormatTests: XCTestCase {
     }
 }
 
+final class BoolSettingTests: XCTestCase {
+    private func makeDefaults() -> UserDefaults {
+        let suite = "BoolSettingTests-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        return d
+    }
+
+    private let onByDefault = BoolSetting(storageKey: "OnByDefault", defaultValue: true)
+    private let offByDefault = BoolSetting(storageKey: "OffByDefault", defaultValue: false)
+
+    /// The point of the type: a missing key must read back as `defaultValue`,
+    /// which `UserDefaults.bool(forKey:)` alone cannot do.
+    func testUnsetReadsDefault() {
+        let defaults = makeDefaults()
+        XCTAssertTrue(onByDefault.stored(in: defaults))
+        XCTAssertFalse(offByDefault.stored(in: defaults))
+    }
+
+    func testStoreRoundTrip() {
+        let defaults = makeDefaults()
+        for setting in [onByDefault, offByDefault] {
+            setting.store(true, in: defaults)
+            XCTAssertTrue(setting.stored(in: defaults))
+            setting.store(false, in: defaults)
+            XCTAssertFalse(setting.stored(in: defaults))
+        }
+    }
+
+    func testOverwrite() {
+        let defaults = makeDefaults()
+        onByDefault.store(false, in: defaults)
+        onByDefault.store(true, in: defaults)
+        XCTAssertTrue(onByDefault.stored(in: defaults))
+    }
+
+    func testSettingsAreIndependent() {
+        let defaults = makeDefaults()
+        onByDefault.store(false, in: defaults)
+        XCTAssertFalse(onByDefault.stored(in: defaults))
+        XCTAssertFalse(offByDefault.stored(in: defaults))
+        offByDefault.store(true, in: defaults)
+        XCTAssertFalse(onByDefault.stored(in: defaults))
+        XCTAssertTrue(offByDefault.stored(in: defaults))
+    }
+
+    func testShippedSettings() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(BoolSetting.mirrorVideo.storageKey, "MirrorVideo")
+        XCTAssertEqual(BoolSetting.recordAudio.storageKey, "RecordAudio")
+        XCTAssertTrue(BoolSetting.mirrorVideo.stored(in: defaults))
+        XCTAssertTrue(BoolSetting.recordAudio.stored(in: defaults))
+    }
+}
+
 final class ElapsedTimeTests: XCTestCase {
     func testUnderOneMinute() {
         XCTAssertEqual(ElapsedTime.string(from: 5), "00:05")

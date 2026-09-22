@@ -74,6 +74,12 @@ final class Recorder: NSObject, AVCaptureFileOutputRecordingDelegate {
         isWritingSegment = false
         destinationFolder = folder
         format = MovieFormat.stored()
+        // Has to be set before `startSegment()`: the movie output freezes the
+        // connection's mirroring into the track's display matrix when recording
+        // starts and ignores later changes. Latching it here also keeps every
+        // segment of one take in agreement, which `stitch` relies on when it
+        // copies segment 0's transform onto the merged track.
+        movieOutput.connection(with: .video)?.setMirrored(BoolSetting.mirrorVideo.stored())
         finalName = Filenames.captureName(ext: format.fileExtension)
         state = .recording
         startSegment()
