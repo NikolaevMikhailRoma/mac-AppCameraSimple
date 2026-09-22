@@ -22,5 +22,7 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>Camera preview needs access to the camera.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Recording video with sound needs access to the microphone.</string>
 </dict>
 </plist>

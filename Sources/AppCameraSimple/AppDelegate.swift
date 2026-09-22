@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     private let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
     private let recorder = Recorder()
+    private lazy var audio = AudioInput(session: session)
 
     /// The active recording's file name, or the last saved file's name.
     private var lastName = ""
@@ -169,15 +170,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
                 case .failure:
                     self.bar.showInfo("Recording failed")
                 }
+                // Only now is the last segment written and merged, so this is
+                // the first moment the microphone is safe to give back.
+                self.audio.detach()
                 self.syncPauseButton()
             }
+            syncPauseButton()
+        } else if BoolSetting.recordAudio.stored() {
+            audio.attach { [weak self] in self?.beginRecording() }
         } else {
-            lastName = recorder.start(folder: videoFolder.resolvedFolder())
-            clock.reset()
-            clock.start()
-            bar.setRecording(true)
-            startRecordingTimer()
+            beginRecording()
         }
+    }
+
+    /// The mic is claimed before this runs, so the first segment has sound from
+    /// its very first frame. Pause and resume keep it: it is released once the
+    /// whole take is finished.
+    private func beginRecording() {
+        lastName = recorder.start(folder: videoFolder.resolvedFolder())
+        clock.reset()
+        clock.start()
+        bar.setRecording(true)
+        startRecordingTimer()
         syncPauseButton()
     }
 

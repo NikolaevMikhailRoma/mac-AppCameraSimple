@@ -16,6 +16,7 @@ final class SettingsWindowController: NSWindowController {
     private let videoValue = NSTextField(labelWithString: "")
     private let formatPopUp = NSPopUpButton()
     private let mirrorCheckbox = NSButton(checkboxWithTitle: "Mirror image", target: nil, action: nil)
+    private let audioCheckbox = NSButton(checkboxWithTitle: "Record audio", target: nil, action: nil)
 
     /// Long folder paths need the width; the height follows the grid.
     private static let width: CGFloat = 460
@@ -51,6 +52,7 @@ final class SettingsWindowController: NSWindowController {
         }
         formatPopUp.selectItem(withTitle: MovieFormat.stored().displayName)
         mirrorCheckbox.state = BoolSetting.mirrorVideo.stored() ? .on : .off
+        audioCheckbox.state = BoolSetting.recordAudio.stored() ? .on : .off
     }
 
     private func makeContentView() -> NSView {
@@ -65,6 +67,8 @@ final class SettingsWindowController: NSWindowController {
 
         mirrorCheckbox.target = self
         mirrorCheckbox.action = #selector(changeMirror)
+        audioCheckbox.target = self
+        audioCheckbox.action = #selector(changeAudio)
 
         // The checkbox rows carry their label themselves, so their caption cell
         // stays empty and they line up under the other value controls.
@@ -73,6 +77,7 @@ final class SettingsWindowController: NSWindowController {
             [caption("Videos"), videoValue, changeButton(#selector(changeVideoFolder))],
             [caption("Format"), formatPopUp],
             [NSGridCell.emptyContentView, mirrorCheckbox],
+            [NSGridCell.emptyContentView, audioCheckbox],
         ])
         grid.rowSpacing = 8
         grid.columnSpacing = 8
@@ -118,5 +123,10 @@ final class SettingsWindowController: NSWindowController {
     @objc private func changeMirror() {
         BoolSetting.mirrorVideo.store(mirrorCheckbox.state == .on)
         onMirrorChanged?()
+    }
+
+    /// No callback needed: the recorder reads this when the next take starts.
+    @objc private func changeAudio() {
+        BoolSetting.recordAudio.store(audioCheckbox.state == .on)
     }
 }
