@@ -4,18 +4,18 @@
 
 A minimal native macOS camera app: live preview, photo and video capture. The
 image is mirrored left to right, the way a viewfinder normally behaves, and what
-you see is what gets saved.
+you see is what gets saved. Recordings include sound.
 
-Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default; pick a
-separate folder for each, the video format, and whether to mirror, in the
-Settings window (⌘,).
+Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default. The
+Settings window (⌘,) has a separate folder for each, the video format, and
+switches for mirroring and for recording audio — both on by default.
 
 ## Run the app (users)
 
 1. Download `AppCameraSimple.app.zip` from the [latest release](https://github.com/NikolaevMikhailRoma/mac-AppCameraSimple/releases/latest) and unzip it.
 2. Move it wherever you like (e.g. Applications).
 3. First launch: right-click the app → **Open** (it's ad-hoc signed, not notarized by Apple, so Gatekeeper shows one warning before the app even starts — this is expected, click Open to proceed).
-4. Once the app actually launches, macOS will separately ask for camera access — allow it, that's the normal one-time permission prompt.
+4. Once the app actually launches, macOS will separately ask for camera access — allow it, that's the normal one-time permission prompt. The first time you record, it asks for the microphone the same way; deny it and recordings are simply silent.
 
 ## Build from source (developers)
 
