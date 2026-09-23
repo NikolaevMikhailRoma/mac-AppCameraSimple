@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMainMenu(target: self)
         configureSession()
-        recorder.onProcessing = { [weak self] in self?.bar.showInfo("Processing…") }
 
         bar = ControlBar()
         bar.onPhoto = { [weak self] in self?.takePhoto() }
@@ -56,8 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         true
     }
 
-    /// Quitting mid-recording has to wait: the file is only complete once the
-    /// last segment is written and the segments are merged.
+    /// Quitting mid-recording has to wait: the file is only playable once the
+    /// writer has closed it.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard recorder.isActive else { return .terminateNow }
         stopRecordingTimer()
@@ -90,14 +89,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         session.commitConfiguration()
     }
 
-    /// Applies the mirror setting to the two connections that show or capture a
-    /// still image right now. The movie output is left alone on purpose: the
-    /// recorder latches the setting when a take starts, so flipping the checkbox
-    /// mid-recording cannot produce a file whose halves disagree.
+    /// Applies the mirror setting to all three connections. The preview flips
+    /// live; the photo and video outputs flip the pixels themselves, so nothing
+    /// depends on a player honouring orientation metadata. The recorder ignores
+    /// this mid-take, keeping a clip mirrored the same way from end to end.
     private func applyMirroring() {
         let mirrored = BoolSetting.mirrorVideo.stored()
         previewView.previewLayer.connection?.setMirrored(mirrored)
         photoOutput.connection(with: .video)?.setMirrored(mirrored)
+        recorder.setMirrored(mirrored)
     }
 
     /// 16:9 to match the camera's native aspect ratio; the control bar floats
@@ -170,8 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
                 case .failure:
                     self.bar.showInfo("Recording failed")
                 }
-                // Only now is the last segment written and merged, so this is
-                // the first moment the microphone is safe to give back.
+                // The file is closed by now, so the microphone can go back.
                 self.audio.detach()
                 self.syncPauseButton()
             }
@@ -183,9 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         }
     }
 
-    /// The mic is claimed before this runs, so the first segment has sound from
-    /// its very first frame. Pause and resume keep it: it is released once the
-    /// whole take is finished.
+    /// The mic is claimed before this runs, so the clip has sound from its very
+    /// first frame. Pause and resume keep it; it is released once the whole take
+    /// is finished.
     private func beginRecording() {
         lastName = recorder.start(folder: videoFolder.resolvedFolder())
         clock.reset()

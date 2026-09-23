@@ -6,6 +6,18 @@ import Foundation
 ///
 /// The `AVFileType` mapping lives in the exe target's `Recorder`, keeping this
 /// type free of AVFoundation so it stays unit-testable.
+///
+/// Before adding a container here: the mirror has to live in the pixels, never
+/// in the video track's display matrix. Recording once went through
+/// `AVCaptureMovieFileOutput`, which writes a mirrored connection as the display
+/// matrix `[-1 0; 0 1]`. AVFoundation reads that back as the reflection it is,
+/// but ffmpeg's `av_display_rotation_get` cannot express a reflection and
+/// reduces it to `rotation=-180`, so VLC and anything else built on ffmpeg
+/// rotated the clip instead of mirroring it and played it upside down — in
+/// `.mov` exactly as much as in `.mp4`, since the matrix is written before the
+/// container is even chosen. `Recorder` now mirrors the pixel buffers as they
+/// are captured and writes them with `AVAssetWriter`, so files carry no
+/// orientation metadata and a new container inherits none of this.
 public enum MovieFormat: String, CaseIterable, Sendable {
     case mov
     case mp4
