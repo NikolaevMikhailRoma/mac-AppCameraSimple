@@ -41,6 +41,13 @@ final class SampleWriter: @unchecked Sendable {
     private var lastVideoDuration = CMTime.invalid
     /// Set on resume until a video frame arrives to measure the gap against.
     private var awaitingResume = false
+    /// Timestamp of the first frame offered, which bounds the blank-frame skip.
+    private var firstSeenPTS = CMTime.invalid
+
+    /// How long after the start blank frames are still skipped. Measured on the
+    /// built-in camera: a reconfigured session emits three of them and recovers
+    /// in about 200 ms, so half a second is comfortable margin.
+    private static let blankWindow = CMTime(value: 1, timescale: 2)
 
     // MARK: - Transport, all on the sample queue
 
@@ -86,6 +93,16 @@ final class SampleWriter: @unchecked Sendable {
         // so the two tracks begin together.
         if !started {
             guard isVideo else { return }
+            if !firstSeenPTS.isValid { firstSeenPTS = pts }
+            // A capture session rebuilds its graph on every commitConfiguration —
+            // which attaching the microphone does, right before a take — and the
+            // camera emits a few synthetic blank frames while it comes back.
+            // Opening the file on one of those is what leaves a player showing a
+            // black poster image. The skip is time-boxed, so a genuinely flat
+            // scene still starts a recording rather than blocking it forever.
+            if Self.isBlank(sampleBuffer), CMTimeSubtract(pts, firstSeenPTS) < Self.blankWindow {
+                return
+            }
             writer.startSession(atSourceTime: pts)
             started = true
         }
@@ -152,6 +169,34 @@ final class SampleWriter: @unchecked Sendable {
         offset = .zero
         lastVideoPTS = .invalid
         lastVideoDuration = .invalid
+        firstSeenPTS = .invalid
+    }
+
+    /// True when every sampled byte of the frame is identical. Real camera
+    /// output never is — even a covered lens carries sensor noise — so this only
+    /// matches the placeholder frames a restarting capture graph emits.
+    private static func isBlank(_ sampleBuffer: CMSampleBuffer) -> Bool {
+        guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return false }
+        CVPixelBufferLockBaseAddress(pixels, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+
+        let planar = CVPixelBufferIsPlanar(pixels)
+        guard let base = planar ? CVPixelBufferGetBaseAddressOfPlane(pixels, 0)
+                                : CVPixelBufferGetBaseAddress(pixels) else { return false }
+        let rowBytes = planar ? CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+                              : CVPixelBufferGetBytesPerRow(pixels)
+        let height = planar ? CVPixelBufferGetHeightOfPlane(pixels, 0)
+                            : CVPixelBufferGetHeight(pixels)
+        guard rowBytes > 0, height > 0 else { return false }
+
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+        let reference = bytes[0]
+        for y in stride(from: 0, to: height, by: 8) {
+            for x in stride(from: 0, to: rowBytes, by: 8) where bytes[y * rowBytes + x] != reference {
+                return false
+            }
+        }
+        return true
     }
 
     /// A copy of `sampleBuffer` with `offset` taken off every timestamp, so the
