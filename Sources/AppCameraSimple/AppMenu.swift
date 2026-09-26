@@ -1,6 +1,5 @@
 import AppKit
 
-/// Builds the app's main menu. Kept tiny: just an app menu (Settings, Quit).
 @MainActor
 func buildMainMenu(target: AppDelegate) -> NSMenu {
     let appMenu = NSMenu()
