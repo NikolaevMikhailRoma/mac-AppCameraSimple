@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import AVFoundation
 import AppCameraSimpleCore
 
 @MainActor
@@ -159,7 +160,37 @@ final class SettingsWindowController: NSWindowController {
         onMirrorChanged?()
     }
 
+    /// Turning it on asks for the microphone right away. Once denied, the system
+    /// never prompts again, so the user is sent to System Settings instead.
     @objc private func changeAudio() {
-        Settings.recordAudio.store(audioCheckbox.state == .on)
+        guard audioCheckbox.state == .on else { return setRecordAudio(false) }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            setRecordAudio(true)
+        case .notDetermined:
+            AudioInput.requestAccess { [weak self] granted in self?.setRecordAudio(granted) }
+        default:
+            setRecordAudio(false)
+            showMicrophoneDenied()
+        }
+    }
+
+    private func setRecordAudio(_ on: Bool) {
+        Settings.recordAudio.store(on)
+        audioCheckbox.state = on ? .on : .off
+    }
+
+    private func showMicrophoneDenied() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Microphone access is off"
+        alert.informativeText = "Allow \(appName) in System Settings > Privacy & Security > Microphone, then turn Record audio on again."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn,
+                  let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 }

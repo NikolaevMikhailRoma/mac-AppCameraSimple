@@ -20,7 +20,7 @@ final class AudioInput {
             addInput()
             then(input != nil)
         case .notDetermined:
-            AudioInput.requestAccess { [weak self] in
+            AudioInput.requestAccess { [weak self] _ in
                 self?.addInput()
                 then(self?.input != nil)
             }
@@ -31,9 +31,9 @@ final class AudioInput {
 
     /// Must be `nonisolated`: `requestAccess` answers on an XPC queue, and an
     /// inline closure here would inherit the main actor and trap when TCC replies.
-    private nonisolated static func requestAccess(then: @escaping @MainActor () -> Void) {
-        AVCaptureDevice.requestAccess(for: .audio) { _ in
-            Task { @MainActor in then() }
+    nonisolated static func requestAccess(then: @escaping @MainActor (_ granted: Bool) -> Void) {
+        AVCaptureDevice.requestAccess(for: .audio) { granted in
+            Task { @MainActor in then(granted) }
         }
     }
 
