@@ -26,13 +26,6 @@ final class FilenamesTests: XCTestCase {
 }
 
 final class MovieFormatTests: XCTestCase {
-    private func makeDefaults() -> UserDefaults {
-        let suite = "MovieFormatTests-\(UUID().uuidString)"
-        let d = UserDefaults(suiteName: suite)!
-        d.removePersistentDomain(forName: suite)
-        return d
-    }
-
     func testRawStringRoundTrip() {
         XCTAssertEqual(MovieFormat(rawValue: "mov"), .mov)
         XCTAssertEqual(MovieFormat(rawValue: "mp4"), .mp4)
@@ -45,35 +38,45 @@ final class MovieFormatTests: XCTestCase {
         XCTAssertEqual(MovieFormat.mp4.fileExtension, "mp4")
     }
 
+    private let setting = Settings.movieFormat
+
     func testDefaultsToMP4WhenNothingStored() {
-        XCTAssertEqual(MovieFormat.stored(in: makeDefaults()), .mp4)
+        XCTAssertEqual(setting.stored(in: makeDefaults()), .mp4)
     }
 
     func testDefaultsToMP4OnUnrecognizedValue() {
         let d = makeDefaults()
-        d.set("avi", forKey: MovieFormat.storageKey)
-        XCTAssertEqual(MovieFormat.stored(in: d), .mp4)
+        d.set("avi", forKey: setting.storageKey)
+        XCTAssertEqual(setting.stored(in: d), .mp4)
     }
 
     func testStoredValueIsRead() {
         let d = makeDefaults()
-        d.set("mov", forKey: MovieFormat.storageKey)
-        XCTAssertEqual(MovieFormat.stored(in: d), .mov)
+        d.set("mov", forKey: setting.storageKey)
+        XCTAssertEqual(setting.stored(in: d), .mov)
+    }
+
+    /// Earlier versions wrote the raw string under this key; it must still read.
+    func testStoredAsRawStringUnderLegacyKey() {
+        let d = makeDefaults()
+        setting.store(.mov, in: d)
+        XCTAssertEqual(setting.storageKey, "MovieFormat")
+        XCTAssertEqual(d.string(forKey: "MovieFormat"), "mov")
     }
 
     func testStoreRoundTripsThroughDefaults() {
         for format in MovieFormat.allCases {
             let d = makeDefaults()
-            format.store(in: d)
-            XCTAssertEqual(MovieFormat.stored(in: d), format)
+            setting.store(format, in: d)
+            XCTAssertEqual(setting.stored(in: d), format)
         }
     }
 
     func testStoreOverwritesPreviousChoice() {
         let d = makeDefaults()
-        MovieFormat.mov.store(in: d)
-        MovieFormat.mp4.store(in: d)
-        XCTAssertEqual(MovieFormat.stored(in: d), .mp4)
+        setting.store(.mov, in: d)
+        setting.store(.mp4, in: d)
+        XCTAssertEqual(setting.stored(in: d), .mp4)
     }
 
     func testDisplayNameRoundTrip() {
@@ -81,6 +84,61 @@ final class MovieFormatTests: XCTestCase {
         XCTAssertEqual(MovieFormat.named("MOV"), .mov)
         XCTAssertNil(MovieFormat.named("AVI"))
         XCTAssertNil(MovieFormat.named(nil))
+    }
+}
+
+final class BoolSettingValueTests: XCTestCase {
+    private let onByDefault = Setting(storageKey: "OnByDefault", defaultValue: true)
+    private let offByDefault = Setting(storageKey: "OffByDefault", defaultValue: false)
+
+    /// The point of the type: a missing key must read back as `defaultValue`,
+    /// which `UserDefaults.bool(forKey:)` alone cannot do.
+    func testUnsetReadsDefault() {
+        let defaults = makeDefaults()
+        XCTAssertTrue(onByDefault.stored(in: defaults))
+        XCTAssertFalse(offByDefault.stored(in: defaults))
+    }
+
+    func testStoreRoundTrip() {
+        let defaults = makeDefaults()
+        for setting in [onByDefault, offByDefault] {
+            setting.store(true, in: defaults)
+            XCTAssertTrue(setting.stored(in: defaults))
+            setting.store(false, in: defaults)
+            XCTAssertFalse(setting.stored(in: defaults))
+        }
+    }
+
+    func testOverwrite() {
+        let defaults = makeDefaults()
+        onByDefault.store(false, in: defaults)
+        onByDefault.store(true, in: defaults)
+        XCTAssertTrue(onByDefault.stored(in: defaults))
+    }
+
+    func testSettingsAreIndependent() {
+        let defaults = makeDefaults()
+        onByDefault.store(false, in: defaults)
+        XCTAssertFalse(onByDefault.stored(in: defaults))
+        XCTAssertFalse(offByDefault.stored(in: defaults))
+        offByDefault.store(true, in: defaults)
+        XCTAssertFalse(onByDefault.stored(in: defaults))
+        XCTAssertTrue(offByDefault.stored(in: defaults))
+    }
+
+    func testShippedSettings() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(Settings.mirrorVideo.storageKey, "MirrorVideo")
+        XCTAssertEqual(Settings.recordAudio.storageKey, "RecordAudio")
+        XCTAssertTrue(Settings.mirrorVideo.stored(in: defaults))
+        XCTAssertTrue(Settings.recordAudio.stored(in: defaults))
+    }
+
+    /// A non-Bool under the key (e.g. hand-edited defaults) reads as the default.
+    func testWrongTypeReadsDefault() {
+        let defaults = makeDefaults()
+        defaults.set("yes", forKey: offByDefault.storageKey)
+        XCTAssertFalse(offByDefault.stored(in: defaults))
     }
 }
 
@@ -143,13 +201,6 @@ final class RunningClockTests: XCTestCase {
 }
 
 final class SaveFolderStoreTests: XCTestCase {
-    private func makeDefaults() -> UserDefaults {
-        let suite = "SaveFolderStoreTests-\(UUID().uuidString)"
-        let d = UserDefaults(suiteName: suite)!
-        d.removePersistentDomain(forName: suite)
-        return d
-    }
-
     private func makeTempDir() throws -> URL {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("AppCameraSimpleTests-\(UUID().uuidString)", isDirectory: true)
