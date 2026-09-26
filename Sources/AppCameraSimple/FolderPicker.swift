@@ -1,9 +1,8 @@
 import AppKit
 
-/// Directory-only open panel used to choose a save folder.
 @MainActor
 enum FolderPicker {
-    /// Presents the panel. `completion` runs only when the user picks a folder.
+    /// `completion` runs only when the user picks a folder.
     static func present(startingAt current: URL?,
                         message: String,
                         completion: @escaping (URL) -> Void) {

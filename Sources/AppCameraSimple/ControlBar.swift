@@ -1,8 +1,7 @@
 import AppKit
+import AppCameraSimpleCore
 
-/// The floating bar over the video: photo / record / pause buttons, a settings
-/// gear, and the single status line. Owns its widgets and reports taps through
-/// closures, so the app delegate never touches individual controls.
+/// The floating bar over the video: buttons, settings gear and status line.
 @MainActor
 final class ControlBar: ScrimView {
     var onPhoto: (() -> Void)?
@@ -56,24 +55,20 @@ final class ControlBar: ScrimView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// The status line under the buttons: file name, elapsed time, errors.
     func showInfo(_ text: String) {
         infoLabel.stringValue = text
     }
 
-    /// Swaps the record button between "start" and a red "stop".
-    func setRecording(_ recording: Bool) {
-        let image = symbolImage(recording ? "stop.circle.fill" : "record.circle")
-        if recording { image.isTemplate = false }
-        recordButton.contentTintColor = recording ? .systemRed : .white
-        recordButton.image = image
-    }
-
-    /// Shows the pause button only while a recording is active, with the icon
-    /// for the action the next tap performs.
-    func setPause(visible: Bool, paused: Bool) {
-        pauseButton.isHidden = !visible
-        pauseButton.image = symbolImage(paused ? "play.circle" : "pause.circle")
+    /// Record is disabled while a take is starting or finishing.
+    func show(_ state: TakeState) {
+        let active = state == .recording || state == .paused
+        let recordImage = symbolImage(active ? "stop.circle.fill" : "record.circle")
+        if active { recordImage.isTemplate = false }
+        recordButton.image = recordImage
+        recordButton.contentTintColor = active ? .systemRed : .white
+        recordButton.isEnabled = state == .idle || active
+        pauseButton.isHidden = !active
+        pauseButton.image = symbolImage(state == .paused ? "play.circle" : "pause.circle")
     }
 
     @objc private func photoTapped() { onPhoto?() }
