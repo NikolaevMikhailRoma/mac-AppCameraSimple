@@ -1,6 +1,6 @@
 import Foundation
 
-/// Formats a recording duration as `mm:ss` (and `h:mm:ss` once past an hour).
+/// `mm:ss`, or `h:mm:ss` past an hour.
 public enum ElapsedTime {
     public static func string(from seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))

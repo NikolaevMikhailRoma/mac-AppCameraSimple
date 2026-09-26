@@ -3,15 +3,14 @@ import AppKit
 import AppCameraSimpleCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var bar: ControlBar!
     private var previewView: CameraPreviewView!
 
     private let session = AVCaptureSession()
-    private let photoOutput = AVCapturePhotoOutput()
-    private let recorder = Recorder()
-    private lazy var audio = AudioInput(session: session)
+    private lazy var photo = PhotoCapture(folder: photoFolder)
+    private lazy var recording = RecordingController(session: session, folder: videoFolder)
 
     /// The active recording's file name, or the last saved file's name.
     private var lastName = ""
@@ -26,9 +25,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
     )
     private var settingsWindowController: SettingsWindowController?
 
-    private var recordingTimer: Timer?
-    private var clock = RunningClock()
-
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,10 +32,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         configureSession()
 
         bar = ControlBar()
-        bar.onPhoto = { [weak self] in self?.takePhoto() }
-        bar.onRecord = { [weak self] in self?.toggleRecording() }
-        bar.onPause = { [weak self] in self?.togglePause() }
+        bar.onPhoto = { [weak self] in self?.photo.capture() }
+        bar.onRecord = { [weak self] in self?.recording.toggle() }
+        bar.onPause = { [weak self] in self?.recording.togglePause() }
         bar.onSettings = { [weak self] in self?.showSettings() }
+
+        photo.onFinished = { [weak self] result in
+            self?.showSaved(result, failure: "Photo failed")
+        }
+        recording.onTakeStarted = { [weak self] name in self?.lastName = name }
+        recording.onUpdate = { [weak self] in self?.syncBar() }
+        recording.onTakeFinished = { [weak self] result in
+            self?.showSaved(result, failure: "Recording failed")
+        }
 
         previewView = CameraPreviewView(session: session)
         window = makeWindow(previewView: previewView)
@@ -55,15 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         true
     }
 
-    /// Quitting mid-recording has to wait: the file is only playable once the
-    /// writer has closed it.
+    /// A file is only playable once the writer has closed it.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard recorder.isActive else { return .terminateNow }
-        stopRecordingTimer()
-        bar.showInfo("Finishing recording…")
-        recorder.stop { _ in
+        guard recording.hasOpenFile else { return .terminateNow }
+        recording.finish {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
+        bar.showInfo("Finishing recording…")
         return .terminateLater
     }
 
@@ -82,26 +85,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
            session.canAddInput(input) {
             session.addInput(input)
         }
-        if session.canAddOutput(photoOutput) {
-            session.addOutput(photoOutput)
-        }
-        recorder.configure(session: session)
+        photo.configure(session: session)
+        recording.configure(session: session)
         session.commitConfiguration()
     }
 
-    /// Applies the mirror setting to all three connections. The preview flips
-    /// live; the photo and video outputs flip the pixels themselves, so nothing
-    /// depends on a player honouring orientation metadata. The recorder ignores
-    /// this mid-take, keeping a clip mirrored the same way from end to end.
+    /// All three connections: preview, photo and video.
     private func applyMirroring() {
-        let mirrored = BoolSetting.mirrorVideo.stored()
+        let mirrored = Settings.mirrorVideo.stored()
         previewView.previewLayer.connection?.setMirrored(mirrored)
-        photoOutput.connection(with: .video)?.setMirrored(mirrored)
-        recorder.setMirrored(mirrored)
+        photo.setMirrored(mirrored)
+        recording.setMirrored(mirrored)
     }
 
-    /// 16:9 to match the camera's native aspect ratio; the control bar floats
-    /// over the preview, so the window is exactly the video size.
+    /// 16:9, the camera's native aspect ratio.
     private func makeWindow(previewView: NSView) -> NSWindow {
         let width: CGFloat = 960
         let window = NSWindow(
@@ -129,116 +126,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, AVCapturePhotoCaptureD
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    // MARK: - Photo
+    // MARK: - Status
 
-    private func takePhoto() {
-        photoOutput.capturePhoto(with: AVCapturePhotoSettings(), delegate: self)
-    }
-
-    nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        let data = (error == nil) ? photo.fileDataRepresentation() : nil
-        Task { @MainActor [weak self] in
-            self?.savePhoto(data)
-        }
-    }
-
-    private func savePhoto(_ data: Data?) {
-        guard let data else { return bar.showInfo("Photo failed") }
-        let url = photoFolder.resolvedFolder()
-            .appendingPathComponent(Filenames.captureName(ext: "jpg"))
-        do {
-            try data.write(to: url)
+    private func showSaved(_ result: Result<URL, Error>, failure: String) {
+        switch result {
+        case .success(let url):
             lastName = url.lastPathComponent
             refreshInfo()
-        } catch {
-            bar.showInfo("Photo failed")
+        case .failure:
+            bar.showInfo(failure)
         }
     }
 
-    // MARK: - Recording
-
-    private func toggleRecording() {
-        if recorder.isActive {
-            stopRecordingTimer()
-            bar.setRecording(false)
-            recorder.stop { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success(let url):
-                    self.lastName = url.lastPathComponent
-                    self.refreshInfo()
-                case .failure:
-                    self.bar.showInfo("Recording failed")
-                }
-                // The file is closed by now, so the microphone can go back.
-                self.audio.detach()
-                self.syncPauseButton()
-            }
-            syncPauseButton()
-        } else if BoolSetting.recordAudio.stored() {
-            audio.attach { [weak self] in self?.beginRecording() }
-        } else {
-            beginRecording()
-        }
-    }
-
-    /// The mic is claimed before this runs, so the clip has sound from its very
-    /// first frame. Pause and resume keep it; it is released once the whole take
-    /// is finished.
-    private func beginRecording() {
-        lastName = recorder.start(folder: videoFolder.resolvedFolder())
-        clock.reset()
-        clock.start()
-        bar.setRecording(true)
-        startRecordingTimer()
-        syncPauseButton()
-    }
-
-    private func togglePause() {
-        switch recorder.state {
-        case .recording:
-            recorder.pause()
-            clock.pause()
-            stopRecordingTimer()
-            refreshInfo()
-        case .paused:
-            recorder.resume()
-            clock.start()
-            startRecordingTimer()
-        case .idle:
-            break
-        }
-        syncPauseButton()
-    }
-
-    private func syncPauseButton() {
-        bar.setPause(visible: recorder.isActive, paused: recorder.state == .paused)
-    }
-
-    private func startRecordingTimer() {
+    private func syncBar() {
+        bar.show(recording.state)
         refreshInfo()
-        recordingTimer?.invalidate()
-        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshInfo() }
-        }
     }
 
-    private func stopRecordingTimer() {
-        recordingTimer?.invalidate()
-        recordingTimer = nil
-    }
-
-    /// The single bottom line: file name while idle, plus elapsed time and a
-    /// pause marker while a recording is in progress.
     private func refreshInfo() {
-        let elapsed = ElapsedTime.string(from: clock.elapsed())
-        switch recorder.state {
-        case .idle:
-            bar.showInfo(lastName)
-        case .recording:
-            bar.showInfo("\(lastName)  ·  \(elapsed)")
-        case .paused:
-            bar.showInfo("\(lastName)  ·  \(elapsed)  ·  paused")
-        }
+        bar.showInfo(StatusLine.text(name: lastName, state: recording.state, elapsed: recording.elapsed))
     }
 }

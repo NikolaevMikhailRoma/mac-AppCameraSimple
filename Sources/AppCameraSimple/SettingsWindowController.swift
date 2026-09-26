@@ -1,12 +1,9 @@
 import AppKit
 import AppCameraSimpleCore
 
-/// Standard macOS Settings window: independent photo/video save folders, the
-/// video container format and the capture toggles, laid out in a captioned grid.
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    /// Mirroring is the one setting that has to reach the live preview the moment
-    /// it changes, rather than being read when the next capture starts.
+    /// The only setting that must reach the live preview immediately.
     var onMirrorChanged: (() -> Void)?
 
     private let photoFolder: SaveFolderStore
@@ -18,7 +15,6 @@ final class SettingsWindowController: NSWindowController {
     private let mirrorCheckbox = NSButton(checkboxWithTitle: "Mirror image", target: nil, action: nil)
     private let audioCheckbox = NSButton(checkboxWithTitle: "Record audio", target: nil, action: nil)
 
-    /// Long folder paths need the width; the height follows the grid.
     private static let width: CGFloat = 460
 
     init(photoFolder: SaveFolderStore, videoFolder: SaveFolderStore) {
@@ -43,16 +39,15 @@ final class SettingsWindowController: NSWindowController {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Re-reads folders and the stored format into the controls.
     func refresh() {
         for (label, store) in [(photoValue, photoFolder), (videoValue, videoFolder)] {
             let path = store.resolvedFolder().path
             label.stringValue = (path as NSString).abbreviatingWithTildeInPath
             label.toolTip = path
         }
-        formatPopUp.selectItem(withTitle: MovieFormat.stored().displayName)
-        mirrorCheckbox.state = BoolSetting.mirrorVideo.stored() ? .on : .off
-        audioCheckbox.state = BoolSetting.recordAudio.stored() ? .on : .off
+        formatPopUp.selectItem(withTitle: Settings.movieFormat.stored().displayName)
+        mirrorCheckbox.state = Settings.mirrorVideo.stored() ? .on : .off
+        audioCheckbox.state = Settings.recordAudio.stored() ? .on : .off
     }
 
     private func makeContentView() -> NSView {
@@ -70,8 +65,6 @@ final class SettingsWindowController: NSWindowController {
         audioCheckbox.target = self
         audioCheckbox.action = #selector(changeAudio)
 
-        // The checkbox rows carry their label themselves, so their caption cell
-        // stays empty and they line up under the other value controls.
         let grid = NSGridView(views: [
             [caption("Photos"), photoValue, changeButton(#selector(changePhotoFolder))],
             [caption("Videos"), videoValue, changeButton(#selector(changeVideoFolder))],
@@ -117,16 +110,15 @@ final class SettingsWindowController: NSWindowController {
     }
 
     @objc private func changeFormat() {
-        (MovieFormat.named(formatPopUp.titleOfSelectedItem) ?? .fallback).store()
+        Settings.movieFormat.store(MovieFormat.named(formatPopUp.titleOfSelectedItem) ?? Settings.movieFormat.defaultValue)
     }
 
     @objc private func changeMirror() {
-        BoolSetting.mirrorVideo.store(mirrorCheckbox.state == .on)
+        Settings.mirrorVideo.store(mirrorCheckbox.state == .on)
         onMirrorChanged?()
     }
 
-    /// No callback needed: the recorder reads this when the next take starts.
     @objc private func changeAudio() {
-        BoolSetting.recordAudio.store(audioCheckbox.state == .on)
+        Settings.recordAudio.store(audioCheckbox.state == .on)
     }
 }
