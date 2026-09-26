@@ -6,9 +6,10 @@ A minimal native macOS camera app: live preview, photo and video capture. The
 image is mirrored left to right, the way a viewfinder normally behaves, and what
 you see is what gets saved. Recordings include sound.
 
-Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default. The
-Settings window (⌘,) has a separate folder for each, the video format, and
-switches for mirroring and for recording audio — both on by default.
+Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default.
+Settings (⌘,) has three tabs: **General** (mirroring), **Picture** (photo
+folder) and **Video** (video folder, format, sound). Mirroring and sound are
+on by default.
 
 ## Run the app (users)
 
