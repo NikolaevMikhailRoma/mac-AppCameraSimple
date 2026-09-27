@@ -48,6 +48,8 @@ public enum Settings {
 
     public static let movieFormat = Setting(storageKey: "MovieFormat", defaultValue: MovieFormat.mp4)
 
+    public static let videoSize = Setting(storageKey: "VideoSize", defaultValue: VideoSize.original)
+
     public static let photoFormat = Setting(storageKey: "PhotoFormat", defaultValue: PhotoFormat.png)
 
     /// Full size; see `PhotoScale`.

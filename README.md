@@ -8,7 +8,7 @@ you see is what gets saved. Recordings include sound.
 
 Photos and videos are saved to `~/Pictures/AppCameraSimple/` by default.
 Settings (⌘,) has three tabs: **General** (mirroring), **Picture** (photo
-folder, PNG or JPEG, quality, scale down with a size estimate) and **Video** (video folder, format, sound). Photos are PNG, mirroring and sound are
+folder, PNG or JPEG, quality, scale down with a size estimate) and **Video** (video folder, format, frame size down to 144p with a MB/s estimate, sound). Photos are PNG, mirroring and sound are
 on by default.
 
 ## Run the app (users)

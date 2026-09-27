@@ -28,15 +28,8 @@ final class PhotoCapture: NSObject, AVCapturePhotoCaptureDelegate {
         output.connection(with: .video)?.setMirrored(mirrored)
     }
 
-    /// The photo's size before scaling: the camera's active format, which is
-    /// what `AVCapturePhotoOutput` delivers on the Mac.
-    var sourceSize: (width: Int, height: Int)? {
-        guard let input = output.connection(with: .video)?.inputPorts.first?.input as? AVCaptureDeviceInput else {
-            return nil
-        }
-        let dimensions = CMVideoFormatDescriptionGetDimensions(input.device.activeFormat.formatDescription)
-        return (Int(dimensions.width), Int(dimensions.height))
-    }
+    /// The photo's size before scaling.
+    var camera: CameraFormat? { output.cameraFormat }
 
     /// Asks for uncompressed pixels, so the chosen format is encoded once from
     /// the sensor data rather than re-encoded from the camera's own JPEG.

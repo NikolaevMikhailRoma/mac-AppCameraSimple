@@ -7,8 +7,8 @@ final class SettingsWindowController: NSWindowController {
     /// The only setting that must reach the live preview immediately.
     var onMirrorChanged: (() -> Void)?
 
-    /// The camera's photo size, for the file size estimate.
-    var photoSize: (() -> (width: Int, height: Int)?)?
+    /// The camera's format: which video sizes it allows, and the size estimates.
+    var camera: (() -> CameraFormat?)?
 
     private let photoFolder: SaveFolderStore
     private let videoFolder: SaveFolderStore
@@ -16,6 +16,8 @@ final class SettingsWindowController: NSWindowController {
     private let photoValue = NSTextField(labelWithString: "")
     private let videoValue = NSTextField(labelWithString: "")
     private let formatPopUp = NSPopUpButton()
+    private let videoSizePopUp = NSPopUpButton()
+    private let videoEstimate = NSTextField(labelWithString: "")
     private let photoFormatPopUp = NSPopUpButton()
     private let qualityCaption = NSTextField(labelWithString: "Quality")
     private let qualitySlider = NSSlider(value: 0, minValue: 0.1, maxValue: 1, target: nil, action: nil)
@@ -62,6 +64,7 @@ final class SettingsWindowController: NSWindowController {
         qualitySlider.doubleValue = photo.quality
         scaleSlider.doubleValue = photo.scale
         showPhotoOptions()
+        showVideoSizes()
         mirrorCheckbox.state = Settings.mirrorVideo.stored() ? .on : .off
         audioCheckbox.state = Settings.recordAudio.stored() ? .on : .off
     }
@@ -92,6 +95,9 @@ final class SettingsWindowController: NSWindowController {
             label.widthAnchor.constraint(equalToConstant: 44).isActive = true
         }
         photoEstimate.textColor = .secondaryLabelColor
+        videoEstimate.textColor = .secondaryLabelColor
+        videoSizePopUp.target = self
+        videoSizePopUp.action = #selector(changeVideoSize)
 
         mirrorCheckbox.target = self
         mirrorCheckbox.action = #selector(changeMirror)
@@ -115,6 +121,7 @@ final class SettingsWindowController: NSWindowController {
         tabs.addTabViewItem(tab("Video", rows: [
             ("Save to", folderControl(videoValue, #selector(changeVideoFolder))),
             ("Format", formatPopUp),
+            ("Size", row(videoEstimate, videoSizePopUp)),
             ("Record audio", audioCheckbox),
         ]))
 
@@ -205,6 +212,7 @@ final class SettingsWindowController: NSWindowController {
     @objc private func changePhotoFormat() {
         Settings.photoFormat.store(PhotoFormat.named(photoFormatPopUp.titleOfSelectedItem) ?? Settings.photoFormat.defaultValue)
         showPhotoOptions()
+        showVideoSizes()
     }
 
     /// In steps of 5%, finer than anyone can tell apart.
@@ -212,6 +220,7 @@ final class SettingsWindowController: NSWindowController {
         qualitySlider.doubleValue = (qualitySlider.doubleValue * 20).rounded() / 20
         Settings.photoQuality.store(qualitySlider.doubleValue)
         showPhotoOptions()
+        showVideoSizes()
     }
 
     /// Snaps while dragging, so the knob sticks to ½, ⅓, ¼ and the like.
@@ -219,6 +228,7 @@ final class SettingsWindowController: NSWindowController {
         scaleSlider.doubleValue = PhotoScale.snapped(scaleSlider.doubleValue)
         Settings.photoScale.store(scaleSlider.doubleValue)
         showPhotoOptions()
+        showVideoSizes()
     }
 
     /// Greys out quality for PNG and updates the numbers beside the sliders.
@@ -232,13 +242,51 @@ final class SettingsWindowController: NSWindowController {
         qualityValue.stringValue = "\(Int((options.quality * 100).rounded()))%"
         scaleValue.stringValue = String(format: "×%.2f", options.scale)
 
-        guard let source = photoSize?() else {
+        guard let source = camera?() else {
             photoEstimate.stringValue = "—"
             return
         }
         let size = PhotoScale.size(width: source.width, height: source.height, scale: options.scale)
         let bytes = PhotoExport.estimatedBytes(width: source.width, height: source.height, options: options)
         photoEstimate.stringValue = "\(size.width) × \(size.height)  ·  ~\(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))"
+    }
+
+    /// Only sizes the camera can fill are offered; one stored for a bigger
+    /// camera shows, and records, as Original.
+    private func showVideoSizes() {
+        let format = camera?()
+        let sizes = format.map(VideoSize.available(for:)) ?? [.original]
+        videoSizePopUp.removeAllItems()
+        videoSizePopUp.addItems(withTitles: sizes.map { size in
+            guard size == .original, let format else { return size.displayName }
+            return "Original (\(format.width)×\(format.height))"
+        })
+        let stored = Settings.videoSize.stored()
+        videoSizePopUp.selectItem(at: sizes.firstIndex(of: stored) ?? 0)
+        showVideoEstimate()
+    }
+
+    private func showVideoEstimate() {
+        guard let format = camera?() else {
+            videoEstimate.stringValue = ""
+            return
+        }
+        let size = selectedVideoSize
+        let frame = size.dimensions(for: format)
+        let bytes = size.bytesPerSecond(for: format, withAudio: Settings.recordAudio.stored())
+        videoEstimate.stringValue = size == .original
+            ? "~\(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))/s"
+            : "\(frame.width) × \(frame.height)  ·  ~\(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))/s"
+    }
+
+    /// The popup's first item carries the camera's size in its title.
+    private var selectedVideoSize: VideoSize {
+        videoSizePopUp.indexOfSelectedItem == 0 ? .original : VideoSize.named(videoSizePopUp.titleOfSelectedItem) ?? .original
+    }
+
+    @objc private func changeVideoSize() {
+        Settings.videoSize.store(selectedVideoSize)
+        showVideoEstimate()
     }
 
     @objc private func changeMirror() {
@@ -264,6 +312,7 @@ final class SettingsWindowController: NSWindowController {
     private func setRecordAudio(_ on: Bool) {
         Settings.recordAudio.store(on)
         audioCheckbox.state = on ? .on : .off
+        showVideoEstimate()
     }
 
     private func showMicrophoneDenied() {
