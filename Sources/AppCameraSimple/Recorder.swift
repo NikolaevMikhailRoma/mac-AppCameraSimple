@@ -54,7 +54,7 @@ final class Recorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AV
     /// session: attaching it reconfigures the session, so the mirror is applied
     /// here, after that.
     @discardableResult
-    func start(folder: URL, format: MovieFormat, mirrored: Bool, withAudio: Bool) -> String {
+    func start(folder: URL, format: MovieFormat, size: VideoSize, mirrored: Bool, withAudio: Bool) -> String {
         let name = Filenames.captureName(ext: format.fileExtension)
         let fileType = format.avFileType
 
@@ -63,7 +63,7 @@ final class Recorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AV
         let config = WriterConfig(
             url: folder.appendingPathComponent(name),
             fileType: fileType,
-            video: videoSettings(for: fileType),
+            video: videoSettings(for: fileType, size: size),
             audio: withAudio
                 ? audioOutput.recommendedAudioSettingsForAssetWriter(writingTo: fileType)
                 : nil
@@ -96,22 +96,28 @@ final class Recorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AV
         }
     }
 
-    /// Not `recommendedVideoSettings(forVideoCodecType:)`: on macOS it returns
-    /// only the codec, and an input built from that crashes on the missing
-    /// `AVVideoHeightKey`.
-    private func videoSettings(for fileType: AVFileType) -> [String: Any]? {
+    /// The frame size comes from `recommendedVideoSettingsForAssetWriter`, which
+    /// is what the output really delivers. Not `recommendedVideoSettings(forVideoCodecType:)`:
+    /// on macOS it returns only the codec, and an input built from that crashes
+    /// on the missing `AVVideoHeightKey`. Nothing else of the recommendation is
+    /// kept — on macOS it carries no bit rate anyway.
+    ///
+    /// Always H.264: many players outside Apple's world won't open HEVC. A
+    /// smaller `size` is scaled by the writer, proportions kept.
+    private func videoSettings(for fileType: AVFileType, size: VideoSize) -> [String: Any]? {
         guard let recommended = videoOutput.recommendedVideoSettingsForAssetWriter(writingTo: fileType),
-              let width = recommended[AVVideoWidthKey], let height = recommended[AVVideoHeightKey] else {
+              let width = recommended[AVVideoWidthKey] as? Int, let height = recommended[AVVideoHeightKey] as? Int else {
             return nil
         }
-        // Force H.264: many players outside Apple's world won't open HEVC. The
-        // recommended compression properties are codec-specific, so they go too.
-        guard recommended[AVVideoCodecKey] as? String == AVVideoCodecType.h264.rawValue else {
-            return [AVVideoCodecKey: AVVideoCodecType.h264,
-                    AVVideoWidthKey: width,
-                    AVVideoHeightKey: height]
-        }
-        return recommended
+        let camera = CameraFormat(width: width, height: height, fps: videoOutput.cameraFormat?.fps ?? 30)
+        let frame = size.dimensions(for: camera)
+        return [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: frame.width,
+            AVVideoHeightKey: frame.height,
+            AVVideoScalingModeKey: AVVideoScalingModeResizeAspect,
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: size.bitRate(for: camera)],
+        ]
     }
 
     // MARK: - Capture callbacks

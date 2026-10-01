@@ -11,6 +11,11 @@ extension Bool: SettingValue {
     public var encoded: Any { self }
 }
 
+extension Double: SettingValue {
+    public static func decode(_ object: Any?) -> Double? { object as? Double }
+    public var encoded: Any { self }
+}
+
 extension SettingValue where Self: RawRepresentable, RawValue == String {
     public static func decode(_ object: Any?) -> Self? { (object as? String).flatMap(Self.init(rawValue:)) }
     public var encoded: Any { rawValue }
@@ -42,4 +47,14 @@ public enum Settings {
     public static let recordAudio = Setting(storageKey: "RecordAudio", defaultValue: true)
 
     public static let movieFormat = Setting(storageKey: "MovieFormat", defaultValue: MovieFormat.mp4)
+
+    public static let videoSize = Setting(storageKey: "VideoSize", defaultValue: VideoSize.original)
+
+    public static let photoFormat = Setting(storageKey: "PhotoFormat", defaultValue: PhotoFormat.png)
+
+    /// Full size; see `PhotoScale`.
+    public static let photoScale = Setting(storageKey: "PhotoScale", defaultValue: 1.0)
+
+    /// JPEG only.
+    public static let photoQuality = Setting(storageKey: "PhotoQuality", defaultValue: 0.85)
 }

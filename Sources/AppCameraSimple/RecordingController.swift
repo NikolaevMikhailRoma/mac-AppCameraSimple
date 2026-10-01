@@ -90,6 +90,7 @@ final class RecordingController {
         let name = recorder.start(
             folder: folder.resolvedFolder(),
             format: Settings.movieFormat.stored(),
+            size: Settings.videoSize.stored(),
             mirrored: Settings.mirrorVideo.stored(),
             withAudio: withAudio
         )

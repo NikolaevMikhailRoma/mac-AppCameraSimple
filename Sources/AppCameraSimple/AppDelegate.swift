@@ -119,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             videoFolder: videoFolder
         )
         controller.onMirrorChanged = { [weak self] in self?.applyMirroring() }
+        controller.camera = { [weak self] in self?.photo.camera }
         settingsWindowController = controller
         controller.refresh()
         controller.showWindow(nil)
