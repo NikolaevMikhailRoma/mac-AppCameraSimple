@@ -27,7 +27,7 @@ Photos are PNG, mirroring and sound are on by default.
 
 ## Build from source (developers)
 
-All the source is in this repo and safe to review — no third-party dependencies, only Apple's own frameworks (AppKit, AVFoundation).
+All the source is in this repo and safe to review — no third-party dependencies, only Apple's own frameworks.
 
 Requirements:
 - macOS 15+
