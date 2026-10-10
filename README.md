@@ -1,5 +1,11 @@
 # AppCameraSimple
 
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+[![License](https://img.shields.io/github/license/NikolaevMikhailRoma/mac-AppCameraSimple)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/NikolaevMikhailRoma/mac-AppCameraSimple)](https://github.com/NikolaevMikhailRoma/mac-AppCameraSimple/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NikolaevMikhailRoma/mac-AppCameraSimple/total)](https://github.com/NikolaevMikhailRoma/mac-AppCameraSimple/releases)
+
 ![Screenshot](assets/screenshot.png)
 
 A minimal native macOS camera app: live preview, photo and video capture. The
